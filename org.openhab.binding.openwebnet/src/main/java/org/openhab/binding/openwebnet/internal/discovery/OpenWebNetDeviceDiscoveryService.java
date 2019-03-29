@@ -241,6 +241,23 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService i
         } else {
             thingLabel = thingLabel + " (WHERE=" + whereLabel + ")";
         }
+        // Parameter addrtype
+        if ((deviceType == OpenDeviceType.SCS_SHUTTER_CONTROL || deviceType == OpenDeviceType.SCS_ON_OFF_SWITCH)
+                && baseMsg != null) {
+            if (isArea(where)) {
+                properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_ADDRTYPE,
+                        OpenWebNetBindingConstants.PARAMETER_TYPE_AREA);
+            } else if (isGroup(where)) {
+                properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_ADDRTYPE,
+                        OpenWebNetBindingConstants.PARAMETER_TYPE_GROUP);
+            } else if (isGeneral(where)) {
+                properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_ADDRTYPE,
+                        OpenWebNetBindingConstants.PARAMETER_TYPE_GENERAL);
+            } else {
+                properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_ADDRTYPE,
+                        OpenWebNetBindingConstants.PARAMETER_TYPE_POINT_TO_POINT);
+            }
+        }
         discoveryResult = DiscoveryResultBuilder.create(thingUID).withThingType(thingTypeUID).withProperties(properties)
                 .withBridge(bridgeUID).withLabel(thingLabel).build();
         thingDiscovered(discoveryResult);
@@ -260,4 +277,68 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService i
         // hueBridgeHandler.unregisterLightStatusListener(this);
     }
 
+    /**
+     * Return where is Area
+     *
+     * @param String where
+     * @return boolean
+     */
+    protected boolean isArea(String where) {
+        String wheretmp = where;
+        int A = 0;
+        if (where.indexOf("#4#") > 0) {
+            wheretmp = where.substring(0, where.indexOf("#4#"));
+        }
+        if (wheretmp.indexOf("#") == -1) {
+            A = Integer.parseInt(wheretmp);
+            if ((A >= 1 && A <= 9) || A == 100) {
+                logger.debug("==OWN:DeviceDiscovery== isArea() where:{} is Area", where);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Return where is Group
+     *
+     * @param String where
+     * @return boolean
+     */
+    protected boolean isGroup(String where) {
+        String wheretmp = where;
+        int A = 0;
+        if (where.indexOf("#4#") > 0) {
+            wheretmp = where.substring(0, where.indexOf("#4#"));
+        }
+        if (wheretmp.indexOf('#') >= 0) {
+            wheretmp = wheretmp.substring(wheretmp.indexOf('#') + 1, wheretmp.length());
+            A = Integer.parseInt(wheretmp);
+            if (A >= 1 && A <= 255) {
+                logger.debug("==OWN:DeviceDiscovery== isGroup() where:{} is Group", where);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Return where is General
+     *
+     * @param String where
+     * @return boolean
+     */
+    protected boolean isGeneral(String where) {
+        String wheretmp = where;
+        if (where.indexOf("#4#") > 0) {
+            wheretmp = where.substring(0, where.indexOf("#4#"));
+        }
+        if (wheretmp.indexOf('#') == -1) {
+            if (Integer.parseInt(wheretmp) == 0) {
+                logger.debug("==OWN:DeviceDiscovery== isGeneral() where:{} is General", where);
+                return true;
+            }
+        }
+        return false;
+    }
 }

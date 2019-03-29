@@ -14,6 +14,7 @@ package org.openhab.binding.openwebnet.handler;
 
 import static org.openhab.binding.openwebnet.OpenWebNetBindingConstants.*;
 
+import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Set;
@@ -86,6 +87,7 @@ public class OpenWebNetAutomationHandler extends OpenWebNetThingHandler {
     private int calibrating = CALIBRATION_INACTIVE;
     private static final int STEP_TIME_MIN = 50; // ms
     private Command commandRequestedWhileMoving = null;
+    protected int addrtype; // address type
 
     /// TODO GENERAL
     /// consider making all Automation calls Aynch insted of Synch (blocking), as all the behavior is based on received
@@ -100,6 +102,7 @@ public class OpenWebNetAutomationHandler extends OpenWebNetThingHandler {
     public void initialize() {
         super.initialize();
         logger.debug("==OWN:AutomationHandler== initialize() thing={}", thing.getUID());
+        addrtype = ((BigDecimal) getConfig().get(CONFIG_PROPERTY_ADDRTYPE)).intValue();
         if (!bridgeHandler.isBusGateway()) {
             deviceWhere = deviceWhere + BaseOpenMessage.UNIT_01;
         }
@@ -114,6 +117,23 @@ public class OpenWebNetAutomationHandler extends OpenWebNetThingHandler {
          */
         if (bridgeHandler != null && bridgeHandler.isBusGateway()) {
             automationType = Automation.Type.POINT_TO_POINT;
+            switch (addrtype) {
+                case PARAMETER_TYPE_POINT_TO_POINT:
+                    automationType = Automation.Type.POINT_TO_POINT;
+                    break;
+                case PARAMETER_TYPE_AREA:
+                    automationType = Automation.Type.AREA;
+                    break;
+                case PARAMETER_TYPE_GROUP:
+                    automationType = Automation.Type.GROUP;
+                    break;
+                case PARAMETER_TYPE_GENERAL:
+                    automationType = Automation.Type.GENERAL;
+                    break;
+                default:
+                    logger.debug("==OWN:AutomationHandler== initialize() Unsupported addrtype={} for thing {}",
+                            addrtype, getThing().getUID());
+            }
         }
         Object shutterRunConfig = getConfig().get(CONFIG_PROPERTY_SHUTTER_RUN);
         try {
@@ -151,7 +171,12 @@ public class OpenWebNetAutomationHandler extends OpenWebNetThingHandler {
     protected void requestChannelState(ChannelUID channel) {
         logger.debug("==OWN:AutomationHandler== requestChannelState() thingUID={} channel={}", thing.getUID(),
                 channel.getId());
-        bridgeHandler.gateway.send(Automation.requestStatus(deviceWhere, automationType));
+        if (addrtype != 1) {
+            updateStatus(ThingStatus.ONLINE);
+            updateState(channel, UnDefType.UNDEF);
+        } else {
+            bridgeHandler.gateway.send(Automation.requestStatus(deviceWhere, automationType));
+        }
         // TODO request shutter position, if natively supported by device
     }
 
@@ -202,6 +227,7 @@ public class OpenWebNetAutomationHandler extends OpenWebNetThingHandler {
             }
         } else {
             logger.warn("==OWN:AutomationHandler== Command {} is not supported for thing {}", command, thing.getUID());
+            return;
         }
     }
 
