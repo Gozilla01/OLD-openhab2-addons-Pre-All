@@ -14,7 +14,9 @@ package org.openhab.binding.openwebnet.handler;
 
 import static org.openhab.binding.openwebnet.OpenWebNetBindingConstants.*;
 
+import java.math.BigDecimal;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.smarthome.core.library.types.DecimalType;
@@ -23,8 +25,10 @@ import org.eclipse.smarthome.core.library.types.OnOffType;
 import org.eclipse.smarthome.core.library.types.PercentType;
 import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.Thing;
+import org.eclipse.smarthome.core.thing.ThingStatus;
 import org.eclipse.smarthome.core.thing.ThingTypeUID;
 import org.eclipse.smarthome.core.types.Command;
+import org.eclipse.smarthome.core.types.UnDefType;
 import org.openhab.binding.openwebnet.OpenWebNetBindingConstants;
 import org.openwebnet.message.BaseOpenMessage;
 import org.openwebnet.message.Lighting;
@@ -54,6 +58,8 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
     private boolean brightnessLevelRequested = false; // was the brightness level requested ?
     private int latestBrightnessWhat = -1; // latest brightness WHAT value (-1 = unknown)
     private int latestBrightnessWhatBeforeOff = -1; // latest brightness WHAT value before device was set to off
+    private final static int SCHEDULE_DELAY = 500; // ms
+    protected int addrtype; // address type
 
     public OpenWebNetLightingHandler(@NonNull Thing thing) {
         super(thing);
@@ -64,8 +70,25 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
     public void initialize() {
         super.initialize();
         logger.debug("==OWN:LightingHandler== initialize() thing={}", thing.getUID());
+        addrtype = ((BigDecimal) getConfig().get(CONFIG_PROPERTY_ADDRTYPE)).intValue();
         if (bridgeHandler != null && bridgeHandler.isBusGateway()) {
-            lightingType = Lighting.Type.POINT_TO_POINT;
+            switch (addrtype) {
+                case PARAMETER_TYPE_POINT_TO_POINT:
+                    lightingType = Lighting.Type.POINT_TO_POINT;
+                    break;
+                case PARAMETER_TYPE_AREA:
+                    lightingType = Lighting.Type.AREA;
+                    break;
+                case PARAMETER_TYPE_GROUP:
+                    lightingType = Lighting.Type.GROUP;
+                    break;
+                case PARAMETER_TYPE_GENERAL:
+                    lightingType = Lighting.Type.GENERAL;
+                    break;
+                default:
+                    logger.debug("==OWN:LightingHandler== initialize() Unsupported addrtype={} for thing {}", addrtype,
+                            getThing().getUID());
+            }
         }
     }
 
@@ -73,7 +96,12 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
     protected void requestChannelState(ChannelUID channel) {
         logger.debug("==OWN:LightingHandler== requestChannelState() thingUID={} channel={}", thing.getUID(),
                 channel.getId());
-        bridgeHandler.gateway.send(Lighting.requestStatus(toWhere(channel), lightingType));
+        if (addrtype != PARAMETER_TYPE_POINT_TO_POINT) {
+            updateStatus(ThingStatus.ONLINE);
+            updateState(channel, UnDefType.UNDEF);
+        } else {
+            bridgeHandler.gateway.send(Lighting.requestStatus(toWhere(channel), lightingType));
+        }
     }
 
     @Override
@@ -106,17 +134,18 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
      * @param command
      */
     private void handleSwitchCommand(ChannelUID channel, Command command) {
-        logger.debug("==OWN:LightingHandler== handleSwitchCommand() (command={} - channel={})", command, channel);
         if (command instanceof OnOffType) {
             if (OnOffType.ON.equals(command)) {
                 bridgeHandler.gateway.send(Lighting.requestTurnOn(toWhere(channel), lightingType));
             } else if (OnOffType.OFF.equals(command)) {
                 bridgeHandler.gateway.send(Lighting.requestTurnOff(toWhere(channel), lightingType));
             }
+            if (addrtype != PARAMETER_TYPE_POINT_TO_POINT) {
+                ScheduleUnDef(channel);
+            }
         } else {
             logger.warn("==OWN:LightingHandler== Unsupported command: {}", command);
         }
-
     }
 
     /**
@@ -249,6 +278,10 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
             logger.info(
                     "==OWN:LightingHandler== updateLightOnOffState() Ignoring unsupported WHAT for thing {}. Frame={}",
                     getThing().getUID(), msg);
+            return;
+        }
+        if (addrtype != 1) {
+            ScheduleUnDefStr(channelID);
         }
     }
 
@@ -384,6 +417,22 @@ public class OpenWebNetLightingHandler extends OpenWebNetThingHandler {
         } else { // CHANNEL_SWITCH_01 or other channels
             return deviceWhere + BaseOpenMessage.UNIT_01;
         }
+    }
+
+    private void ScheduleUnDef(ChannelUID channel) {
+        // let's schedule a UNDEF
+        scheduler.schedule(() -> {
+            logger.debug("==OWN:LightingHandler== ScheduleReleased() # " + deviceWhere + " sending virtual UnDef...");
+            updateState(channel, UnDefType.UNDEF);
+        }, SCHEDULE_DELAY, TimeUnit.MILLISECONDS);
+    }
+
+    private void ScheduleUnDefStr(String channel) {
+        // let's schedule a UNDEF
+        scheduler.schedule(() -> {
+            logger.debug("==OWN:LightingHandler== ScheduleReleased() # " + deviceWhere + " sending virtual UnDef...");
+            updateState(channel, UnDefType.UNDEF);
+        }, SCHEDULE_DELAY, TimeUnit.MILLISECONDS);
     }
 
 } // class
